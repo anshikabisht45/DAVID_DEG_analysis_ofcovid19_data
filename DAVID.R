@@ -12,18 +12,35 @@ cat(rep("=", 70), "\n\n")
 metadata_path <- "C:/Users/Hp/Downloads/DATA FOR EXPERIMENT/assignment_29nov/david_4d/GSE152418_series_matrix.txt"
 
 # Read series matrix file (skip comment lines starting with !)
-metadata_lines <- readLines(metadata_path)
+metadata_lines <- readLines(metadata_path)     #takes that string→ goes to the file system→ opens the file → reads it line by line into R
+#we could have written the path directly instead of the metadata_path object for reproducibility
+#You change one line, not the whole script.when changing file name
+#debugging becomes easy
+#file.exists(metadata_path)
+#[Why readLines() and not read.delim() for GEO metadata](https://chatgpt.com/s/t_69502bf0f1e48191a0a4763bc43f0437)
 
 # Find sample names
 sample_line <- grep("^!Sample_title", metadata_lines, value = TRUE)
 sample_names <- strsplit(sample_line, "\t")[[1]][-1]
+#https://chatgpt.com/s/t_6950302c50408191b3c729c4f112da59
+#list vector choic in above link  for line just above them
+#why drop first element via [-1]
+#https://chatgpt.com/s/t_695030f0f96481918548c5b838ee80d3
 sample_names <- gsub('"', '', sample_names)
+#https://chatgpt.com/s/t_6950396b90a88191bdff21ea302ca065
 
 # Find disease states
 disease_line <- grep("^!Sample_characteristics_ch1.*disease state:", metadata_lines, value = TRUE)[1]
+# [1] says:
+#“Just take the first matching disease-state line.”
+
 disease_states <- strsplit(disease_line, "\t")[[1]][-1]
+# https://chatgpt.com/s/t_69503ea477e081918d6d2798b47deebb
+
 disease_states <- gsub('"', '', disease_states)
 disease_states <- gsub("disease state: ", "", disease_states)
+#disease states are all in one consistent metadata line
+#order matches !Sample_title
 
 # Create metadata dataframe
 metadata <- data.frame(
@@ -31,26 +48,72 @@ metadata <- data.frame(
   disease_state = disease_states,
   stringsAsFactors = FALSE
 )
+# https://chatgpt.com/s/t_695040815a188191a29b256b361fa440
+# https://chatgpt.com/s/t_6950436fb56c81919a83b04c27e6b1a9
+# https://chatgpt.com/s/t_695046127d1081919a8eeaaea31696ef
+#yha factors nhi chahiye ...we need factors but baadme for deseq2 abhi krenge toh pipeline break hogi
 
-cat("Total samples:", nrow(metadata), "\n\n")
-cat("Sample groups:\n")
-print(table(metadata$disease_state))
+
+####It answers three critical questions:
+cat("Total samples:", nrow(metadata), "\n\n")   #How many samples do I have?
+
+cat("Sample groups:\n") 
+print(table(metadata$disease_state))    #How many samples per group?   table() → counts how many times each disease state appears
+
 cat("\nFirst few samples:\n")
 print(head(metadata, 10))
+#Do the first few rows look sane?
+
+#If anything is wrong here → stop the analysis.
+
+#Why cat() + print() together? 👀
+#cat() → for text narration
+#print() → for R objects
 
 # =============================================================================
 # STEP 2: LOAD RAW COUNTS
 # =============================================================================
 cat("\n", rep("=", 70), "\n")
 cat("STEP 2: Loading raw counts\n")
-cat(rep("=", 70), "\n\n")
+cat(rep("=", 70), "\n\n")    # this is made for ease of reading purpose so when i`m reading output-it`s understandable
+
+#explainnation of raw count files-  https://chatgpt.com/s/t_69504be300a081918a0df6998a70cc1c
+#DESeq2 MUST see raw counts to estimate noise correctly so we don`t normalise for deseq2
+#Ensembl IDs are used because they are stable and unambiguous(not open to more than one interpretation.
+#) (used in raw counts)
+
+#why deseq not use normalised counts
+#https://chatgpt.com/s/t_6950501fdd308191ac390d2908ca2069
+#
+
+#deseq2
+#WHY DESEQ NEEDS GEOMETRIC MEAN TO CLCULATE SIZE FACTORS WHICH ARE SENSITIVE TO OUTLIERS FOR CALCULAING SIZE FACTORS IN STEP 1
+#https://chatgpt.com/s/t_6950e01a9acc8191a73d54202b99fccc
+
+#WHAT HAPPENS WHEN MOST OF GENES ARE DE AND IT`L CAUSE MEDIAN OF RATIOS STRUGGLE
+#https://chatgpt.com/s/t_6950e23d96888191b25fbe04a087e759
+
+#THOUGH THIS NORMALISATION SSUMPTION IS DIFFERENT FOR scRNA analysis
+#https://chatgpt.com/s/t_6950e42f71b4819194a231e54d13d64d
+#We disable name checking to prevent R from altering sample identifiers, which must remain identical for accurate metadata matching.
+# https://chatgpt.com/s/t_6950e70b14ac8191921e63fa9eda2d04
 
 counts_path <- "C:/Users/Hp/Downloads/DATA FOR EXPERIMENT/assignment_29nov/david_4d/GSE152418_p20047_Study1_RawCounts.txt"
 counts <- read.delim(counts_path, row.names = 1, check.names = FALSE)
 
+#row.names = 1 specifies that the first column contains gene identifiers, allowing the count matrix to remain purely numeric and compatible with downstream differential expression analysis
+#https://chatgpt.com/s/t_6950e68e57088191ab13fa1791cfec5f
+
+#matrix dimensions
 cat("Counts shape:", nrow(counts), "genes ×", ncol(counts), "samples\n")
 cat("Count columns:", paste(head(colnames(counts), 5), collapse = ", "), "...\n")
 
+#This confirms:
+#column names weren’t altered (check.names = FALSE worked)
+
+#geometric means of 0 gives 0..so in deseq2 which used geometric mean for size factor calculation 
+#how does geometric mean of gene expression which are 0(as rna seq data is parse) happen
+#So genes that: are zero in all samples or zero in many samples do NOT participate in normalization They are ignored by design
 # =============================================================================
 # STEP 3: MATCH METADATA TO COUNTS COLUMNS
 # =============================================================================
@@ -66,7 +129,7 @@ covid_samples <- c()
 healthy_samples <- c()
 
 for (col in colnames(counts)) {
-  # Try to find matching sample in metadata
+  # Try to find a matching sample in metadata
   matched <- FALSE
   for (i in 1:nrow(metadata)) {
     if (grepl(metadata$sample[i], col, fixed = TRUE) || 
@@ -91,29 +154,32 @@ if (length(covid_samples) == 0 || length(healthy_samples) == 0) {
   cat("Metadata samples:", paste(head(metadata$sample), collapse = ", "), "\n")
   stop("Sample matching failed")
 }
+# https://chatgpt.com/s/t_695188ffccc8819180b51ab73c2a07a4
 
 # =============================================================================
 # STEP 4: DIFFERENTIAL EXPRESSION (COVID-19 vs Healthy)
 # =============================================================================
+
 cat("\n", rep("=", 70), "\n")
 cat("STEP 4: Differential Expression - COVID-19 vs Healthy\n")
 cat(rep("=", 70), "\n\n")
 
-# Filter low counts
-mean_counts <- rowMeans(counts)
+# Filter low counts  https://chatgpt.com/s/t_6951947fb9048191b11a0a923d3a428e
+mean_counts <- rowMeans(counts)  #isse har ek gene k sample ka mean nikl jaayga
 counts_filt <- counts[mean_counts > 10, ]
 cat("Genes after filtering (mean > 10):", nrow(counts_filt), "\n")
 
-# Calculate fold changes
+# Calculate fold changes   https://chatgpt.com/s/t_695195bba5c48191b1bcf9b21030c723
 healthy_mean <- rowMeans(counts_filt[, healthy_samples]) + 1
 covid_mean <- rowMeans(counts_filt[, covid_samples]) + 1
 log2fc <- log2(covid_mean / healthy_mean)
 
-# T-tests
-pvals <- sapply(1:nrow(counts_filt), function(i) {
+# T-tests   https://chatgpt.com/s/t_6952c22bc6608191a70814b9a5b04692
+pvals <-sapply(1:nrow(counts_filt), function(i) {
   t.test(as.numeric(counts_filt[i, covid_samples]), 
          as.numeric(counts_filt[i, healthy_samples]))$p.value
 })
+#y yaad rkhna t test k saath humesha as.numeric aayga as t test numeric vector hi accept krta h sirf - not factors,not data frames
 
 # Results table
 results <- data.frame(
