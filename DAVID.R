@@ -191,9 +191,10 @@ results <- data.frame(
 
 # FDR correction
 results$padj <- p.adjust(results$pvalue, method = "BH")
+#We applied Benjamini–Hochberg correction to control the false discovery rate arising from multiple hypothesis testing across thousands of genes.”
 
 # Filter significant genes
-sig <- results[abs(results$log2fc) > 1 & results$padj < 0.05, ]
+sig <- results[abs(results$log2fc) > 1 & results$padj < 0.05, ]      #abs()?    keeps both up and down regulated genes
 sig <- sig[order(-abs(sig$log2fc)), ]
 
 cat("\nSignificant genes (|log2FC| > 1, padj < 0.05):", nrow(sig), "\n")
